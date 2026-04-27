@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import httpx
-import base64
 
 app = FastAPI()
 
@@ -21,11 +20,24 @@ class Request(BaseModel):
     keyword: str
 
 
-def get_auth_header():
-    login = os.getenv("DATAFORSEO_LOGIN")
-    password = os.getenv("DATAFORSEO_PASSWORD")
-    credentials = base64.b64encode(f"{login}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {credentials}", "Content-Type": "application/json"}
+async def get_access_token():
+    client_id = os.getenv("GOOGLE_ADS_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_ADS_CLIENT_SECRET")
+    refresh_token = os.getenv("GOOGLE_ADS_REFRESH_TOKEN")
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token"
+            }
+        )
+    token_data = response.json()
+    print("Token response:", token_data)
+    return token_data.get("access_token")
 
 
 @app.post("/optimize")
@@ -33,79 +45,107 @@ async def optimize(req: Request):
     keyword = req.keyword.lower()
 
     try:
-        # Call DataForSEO Keywords Data API
-        payload = [
-            {
-                "keywords": [keyword],
-                "language_name": "English",
-                "location_code": 2840  # United States
+        access_token = await get_access_token()
+        if not access_token:
+            raise ValueError("Failed to get access token")
+
+        customer_id = os.getenv("GOOGLE_ADS_CUSTOMER_ID")
+        developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN")
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "developer-token": developer_token,
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "keywords": [{"text": keyword, "matchType": "EXACT"}],
+            "pageSize": 10,
+            "keywordPlanNetwork": "GOOGLE_SEARCH",
+            "historicalMetricsOptions": {
+                "includeAverageCpc": True
             }
-        ]
+        }
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live",
-                headers=get_auth_header(),
+                f"https://googleads.googleapis.com/v17/customers/{customer_id}:generateKeywordIdeas",
+                headers=headers,
                 json=payload,
                 timeout=30.0
             )
 
         api_data = response.json()
+        print("Google Ads API response:", api_data)
 
-        # Extract results
-        result = api_data["tasks"][0]["result"]
+        results = api_data.get("results", [])
 
-        if result and len(result) > 0:
-            item = result[0]
-            search_volume = item.get("search_volume", 0) or 0
-            competition = item.get("competition", 0) or 0
-            competition_index = item.get("competition_index", 0) or 0
-            cpc = item.get("cpc", 0) or 0
+        if results and len(results) > 0:
+            item = results[0]
+            metrics = item.get("keywordIdeaMetrics", {})
 
-            # Calculate SEO score based on real data
-            volume_score = min(search_volume / 1000, 40)
-            competition_score = (1 - competition) * 40
+            search_volume = metrics.get("avgMonthlySearches", 0) or 0
+            competition = metrics.get("competition", "UNKNOWN")
+            competition_index = metrics.get("competitionIndex", 0) or 0
+            cpc_micros = metrics.get("averageCpcMicros", 0) or 0
+            cpc = round(cpc_micros / 1_000_000, 2)
+
+            # Map competition to difficulty
+            difficulty_map = {
+                "LOW": "Easy",
+                "MEDIUM": "Medium",
+                "HIGH": "Hard",
+                "UNKNOWN": "Medium"
+            }
+            difficulty = difficulty_map.get(competition, "Medium")
+
+            # Calculate SEO score
+            volume_score = min(int(search_volume) / 1000, 40)
+            competition_score = (1 - competition_index / 100) * 40
             cpc_score = min(cpc * 2, 20)
             seo_score = int(volume_score + competition_score + cpc_score)
             seo_score = max(10, min(seo_score, 100))
 
-            # Difficulty based on competition index
-            if competition_index < 33:
-                difficulty = "Easy"
-            elif competition_index < 66:
-                difficulty = "Medium"
-            else:
-                difficulty = "Hard"
+            # Generate suggestions from related results
+            suggestions = []
+            for r in results[:5]:
+                text = r.get("text", "")
+                if text and text != keyword:
+                    suggestions.append(text)
 
-            # Generate smart suggestions from keyword
-            suggestions = [
-                f"best {keyword} guide",
-                f"{keyword} tips for beginners",
-                f"how to improve {keyword}",
-                f"{keyword} step by step strategy",
-                f"advanced {keyword} techniques"
-            ]
+            if len(suggestions) < 5:
+                suggestions += [
+                    f"best {keyword} guide",
+                    f"{keyword} tips for beginners",
+                    f"how to improve {keyword}",
+                    f"{keyword} step by step strategy",
+                    f"advanced {keyword} techniques"
+                ]
+            suggestions = suggestions[:5]
 
             return {
                 "keyword": keyword,
                 "seo_score": seo_score,
-                "search_volume": search_volume,
-                "competition": round(competition, 2),
+                "search_volume": int(search_volume),
+                "competition": competition,
                 "competition_index": competition_index,
-                "cpc": round(cpc, 2),
+                "cpc": cpc,
                 "suggestions": suggestions,
                 "difficulty": difficulty
             }
 
-    except Exception as e:
-        print(f"DataForSEO error: {e}")
+        else:
+            raise ValueError("No results from Google Ads API")
 
-    # Fallback if API fails
+    except Exception as e:
+        print(f"Google Ads API error: {e}")
+
+    # Fallback
     return {
         "keyword": keyword,
         "seo_score": 50,
         "search_volume": 0,
-        "competition": 0,
+        "competition": "UNKNOWN",
         "competition_index": 0,
         "cpc": 0,
         "suggestions": [

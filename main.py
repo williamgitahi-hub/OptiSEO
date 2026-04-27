@@ -36,7 +36,7 @@ async def get_access_token():
             }
         )
     token_data = response.json()
-    print("Token response:", token_data)
+    print("Token response status:", token_data.get("token_type"))
     return token_data.get("access_token")
 
 
@@ -55,6 +55,7 @@ async def optimize(req: Request):
         headers = {
             "Authorization": f"Bearer {access_token}",
             "developer-token": developer_token,
+            "login-customer-id": customer_id,
             "Content-Type": "application/json"
         }
 
@@ -69,18 +70,17 @@ async def optimize(req: Request):
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"https://googleads.googleapis.com/v17/customers/{customer_id}:generateKeywordIdeas",
+                f"https://googleads.googleapis.com/v16/customers/{customer_id}:generateKeywordIdeas",
                 headers=headers,
                 json=payload,
                 timeout=30.0
             )
 
-        # Log full response details
         print("Status code:", response.status_code)
-        print("Raw response text:", response.text)
+        print("Raw response text:", response.text[:500])
 
         if not response.text.strip():
-            raise ValueError(f"Empty response from Google Ads API. Status: {response.status_code}")
+            raise ValueError(f"Empty response. Status: {response.status_code}")
 
         api_data = response.json()
         print("Google Ads API response:", api_data)

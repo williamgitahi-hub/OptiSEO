@@ -59,23 +59,20 @@ async def optimize(req: Request):
             "Content-Type": "application/json"
         }
 
-        # Correct payload format using keywordSeed
         payload = {
-            "keywordSeed": {
-                "keywords": [keyword]
-            },
+            "geoTargetConstants": ["geoTargetConstants/2840"],
+            "includeAdultKeywords": False,
             "pageSize": 10,
             "keywordPlanNetwork": "GOOGLE_SEARCH",
             "language": "languageConstants/1000",
-            "geoTargetConstants": ["geoTargetConstants/2840"],
-            "historicalMetricsOptions": {
-                "includeAverageCpc": True
+            "keywordSeed": {
+                "keywords": [keyword]
             }
         }
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"https://googleads.googleapis.com/v17/customers/{customer_id}:generateKeywordIdeas",
+                f"https://googleads.googleapis.com/v18/customers/{customer_id}:generateKeywordIdeas",
                 headers=headers,
                 json=payload,
                 timeout=30.0

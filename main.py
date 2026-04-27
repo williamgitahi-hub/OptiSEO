@@ -59,10 +59,15 @@ async def optimize(req: Request):
             "Content-Type": "application/json"
         }
 
+        # Correct payload format using keywordSeed
         payload = {
-            "keywords": [{"text": keyword, "matchType": "EXACT"}],
+            "keywordSeed": {
+                "keywords": [keyword]
+            },
             "pageSize": 10,
             "keywordPlanNetwork": "GOOGLE_SEARCH",
+            "language": "languageConstants/1000",
+            "geoTargetConstants": ["geoTargetConstants/2840"],
             "historicalMetricsOptions": {
                 "includeAverageCpc": True
             }
@@ -70,20 +75,19 @@ async def optimize(req: Request):
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"https://googleads.googleapis.com/v16/customers/{customer_id}:generateKeywordIdeas",
+                f"https://googleads.googleapis.com/v17/customers/{customer_id}:generateKeywordIdeas",
                 headers=headers,
                 json=payload,
                 timeout=30.0
             )
 
         print("Status code:", response.status_code)
-        print("Raw response text:", response.text[:500])
+        print("Raw response:", response.text[:1000])
 
         if not response.text.strip():
             raise ValueError(f"Empty response. Status: {response.status_code}")
 
         api_data = response.json()
-        print("Google Ads API response:", api_data)
 
         results = api_data.get("results", [])
 
@@ -112,9 +116,9 @@ async def optimize(req: Request):
             seo_score = max(10, min(seo_score, 100))
 
             suggestions = []
-            for r in results[:5]:
+            for r in results[:6]:
                 text = r.get("text", "")
-                if text and text != keyword:
+                if text and text.lower() != keyword:
                     suggestions.append(text)
 
             if len(suggestions) < 5:
@@ -139,6 +143,7 @@ async def optimize(req: Request):
             }
 
         else:
+            print("No results. Full API response:", api_data)
             raise ValueError("No results from Google Ads API")
 
     except Exception as e:

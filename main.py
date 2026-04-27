@@ -51,16 +51,18 @@ async def optimize(req: Request):
 
         customer_id = os.getenv("GOOGLE_ADS_CUSTOMER_ID")
         developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN")
+        login_customer_id = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
 
         # Log exact values being used
         print(f"Customer ID: '{customer_id}'")
+        print(f"Login Customer ID: '{login_customer_id}'")
         print(f"Developer Token length: {len(developer_token) if developer_token else 0}")
         print(f"Calling URL: https://googleads.googleapis.com/v18/customers/{customer_id}:generateKeywordIdeas")
 
         headers = {
             "Authorization": f"Bearer {access_token}",
             "developer-token": developer_token,
-            "login-customer-id": customer_id,
+            "login-customer-id": login_customer_id,
             "Content-Type": "application/json"
         }
 

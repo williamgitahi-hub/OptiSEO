@@ -75,6 +75,13 @@ async def optimize(req: Request):
                 timeout=30.0
             )
 
+        # Log full response details
+        print("Status code:", response.status_code)
+        print("Raw response text:", response.text)
+
+        if not response.text.strip():
+            raise ValueError(f"Empty response from Google Ads API. Status: {response.status_code}")
+
         api_data = response.json()
         print("Google Ads API response:", api_data)
 
@@ -90,7 +97,6 @@ async def optimize(req: Request):
             cpc_micros = metrics.get("averageCpcMicros", 0) or 0
             cpc = round(cpc_micros / 1_000_000, 2)
 
-            # Map competition to difficulty
             difficulty_map = {
                 "LOW": "Easy",
                 "MEDIUM": "Medium",
@@ -99,14 +105,12 @@ async def optimize(req: Request):
             }
             difficulty = difficulty_map.get(competition, "Medium")
 
-            # Calculate SEO score
             volume_score = min(int(search_volume) / 1000, 40)
             competition_score = (1 - competition_index / 100) * 40
             cpc_score = min(cpc * 2, 20)
             seo_score = int(volume_score + competition_score + cpc_score)
             seo_score = max(10, min(seo_score, 100))
 
-            # Generate suggestions from related results
             suggestions = []
             for r in results[:5]:
                 text = r.get("text", "")

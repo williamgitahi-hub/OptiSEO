@@ -20,34 +20,39 @@ class Request(BaseModel):
     keyword: str
 
 
-async def fetch_search_data(keyword: str):
-    api_key = os.getenv("GOOGLE_SEARCH_API_KEY")
-    cx = os.getenv("GOOGLE_SEARCH_CX")
+async def fetch_serpapi_data(keyword: str):
+    api_key = os.getenv("SERPAPI_KEY")
 
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            "https://www.googleapis.com/customsearch/v1",
+            "https://serpapi.com/search",
             params={
-                "key": api_key,
-                "cx": cx,
+                "engine": "google",
                 "q": keyword,
-                "num": 10
+                "api_key": api_key,
+                "num": 10,
+                "gl": "us",
+                "hl": "en"
             },
             timeout=30.0
         )
 
-    print("Search API status:", response.status_code)
+    print("SerpAPI status:", response.status_code)
     data = response.json()
-    print("Search API response keys:", list(data.keys()))
+    print("SerpAPI response keys:", list(data.keys()))
     return data
 
 
-def calculate_seo_metrics(keyword: str, search_data: dict):
-    items = search_data.get("items", [])
-    search_info = search_data.get("searchInformation", {})
+def calculate_seo_metrics(keyword: str, data: dict):
+    organic_results = data.get("organic_results", [])
+    related_searches = data.get("related_searches", [])
+    search_info = data.get("search_information", {})
 
-    total_results = int(search_info.get("totalResults", 0))
-    result_count = len(items)
+    total_results_str = search_info.get("total_results", "0")
+    try:
+        total_results = int(str(total_results_str).replace(",", ""))
+    except:
+        total_results = 0
 
     # Calculate competition based on total results
     if total_results > 100_000_000:
@@ -70,17 +75,21 @@ def calculate_seo_metrics(keyword: str, search_data: dict):
     seo_score = int(volume_score + competition_score + keyword_length_score)
     seo_score = max(10, min(seo_score, 100))
 
-    # Extract real suggestions from search results
+    # Extract real suggestions from related searches
     suggestions = []
-    for item in items[:8]:
-        title = item.get("title", "")
-        snippet = item.get("snippet", "")
+    for item in related_searches[:5]:
+        query = item.get("query", "")
+        if query and query.lower() != keyword.lower():
+            suggestions.append(query)
 
-        # Extract meaningful phrases from titles
-        if title and keyword.lower() in title.lower():
-            cleaned = title.split("|")[0].split("-")[0].strip()
-            if cleaned and cleaned.lower() != keyword.lower() and len(cleaned) > len(keyword):
-                suggestions.append(cleaned)
+    # Extract from organic results if not enough
+    if len(suggestions) < 5:
+        for item in organic_results[:8]:
+            title = item.get("title", "")
+            if title and keyword.lower() in title.lower():
+                cleaned = title.split("|")[0].split("-")[0].strip()
+                if cleaned and cleaned.lower() != keyword.lower() and len(cleaned) > len(keyword):
+                    suggestions.append(cleaned)
 
     # Fill remaining with generated suggestions
     if len(suggestions) < 5:
@@ -115,14 +124,14 @@ async def optimize(req: Request):
     keyword = req.keyword.lower()
 
     try:
-        search_data = await fetch_search_data(keyword)
+        data = await fetch_serpapi_data(keyword)
 
-        if "error" in search_data:
-            error_msg = search_data["error"].get("message", "Unknown error")
-            print(f"Search API error: {error_msg}")
+        if "error" in data:
+            error_msg = data.get("error", "Unknown SerpAPI error")
+            print(f"SerpAPI error: {error_msg}")
             raise ValueError(error_msg)
 
-        metrics = calculate_seo_metrics(keyword, search_data)
+        metrics = calculate_seo_metrics(keyword, data)
 
         return {
             "keyword": keyword,

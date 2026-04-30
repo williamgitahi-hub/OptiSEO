@@ -58,12 +58,12 @@ def calculate_seo_metrics(keyword: str, data: dict):
     print(f"Total results raw: {total_results_raw}")
     print(f"Total results parsed: {total_results}")
 
-    # Calculate competition based on total results
-    if total_results > 100_000_000:
+    # Adjusted competition thresholds for SerpAPI result ranges
+    if total_results > 5_000_000:
         competition = "HIGH"
         competition_index = 85
         difficulty = "Hard"
-    elif total_results > 10_000_000:
+    elif total_results > 1_000_000:
         competition = "MEDIUM"
         competition_index = 55
         difficulty = "Medium"
@@ -73,7 +73,7 @@ def calculate_seo_metrics(keyword: str, data: dict):
         difficulty = "Easy"
 
     # Calculate SEO score
-    volume_score = min(total_results / 10_000_000, 40)
+    volume_score = min(total_results / 1_000_000, 40)
     competition_score = (1 - competition_index / 100) * 40
     keyword_length_score = min(len(keyword.split()) * 5, 20)
     seo_score = int(volume_score + competition_score + keyword_length_score)

@@ -48,11 +48,15 @@ def calculate_seo_metrics(keyword: str, data: dict):
     related_searches = data.get("related_searches", [])
     search_info = data.get("search_information", {})
 
-    total_results_str = search_info.get("total_results", "0")
+    # Correctly parse total results
+    total_results_raw = search_info.get("total_results", "0")
     try:
-        total_results = int(str(total_results_str).replace(",", ""))
+        total_results = int(str(total_results_raw).replace(",", "").replace(".", "").strip())
     except:
         total_results = 0
+
+    print(f"Total results raw: {total_results_raw}")
+    print(f"Total results parsed: {total_results}")
 
     # Calculate competition based on total results
     if total_results > 100_000_000:
@@ -75,7 +79,7 @@ def calculate_seo_metrics(keyword: str, data: dict):
     seo_score = int(volume_score + competition_score + keyword_length_score)
     seo_score = max(10, min(seo_score, 100))
 
-    # Extract real suggestions from related searches
+    # Extract real suggestions from related searches first
     suggestions = []
     for item in related_searches[:5]:
         query = item.get("query", "")
@@ -109,13 +113,22 @@ def calculate_seo_metrics(keyword: str, data: dict):
             seen.add(s.lower())
             unique_suggestions.append(s)
 
+    # Estimate CPC based on competition
+    cpc_map = {
+        "HIGH": round(2.5 + len(keyword.split()) * 0.5, 2),
+        "MEDIUM": round(1.2 + len(keyword.split()) * 0.3, 2),
+        "LOW": round(0.5 + len(keyword.split()) * 0.2, 2)
+    }
+    estimated_cpc = cpc_map.get(competition, 0.0)
+
     return {
         "competition": competition,
         "competition_index": competition_index,
         "difficulty": difficulty,
         "seo_score": seo_score,
         "total_results": total_results,
-        "suggestions": unique_suggestions[:5]
+        "suggestions": unique_suggestions[:5],
+        "estimated_cpc": estimated_cpc
     }
 
 
@@ -139,7 +152,7 @@ async def optimize(req: Request):
             "search_volume": metrics["total_results"],
             "competition": metrics["competition"],
             "competition_index": metrics["competition_index"],
-            "cpc": 0.0,
+            "cpc": metrics["estimated_cpc"],
             "suggestions": metrics["suggestions"],
             "difficulty": metrics["difficulty"]
         }
